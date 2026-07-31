@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -282,22 +282,8 @@ namespace Il2CppDumper
         public string GetStringLiteralFromIndex(uint index)
         {
             var stringLiteral = stringLiterals[index];
-            // Guard against corrupt/obfuscated entries (seen in protected binaries):
-            // a bogus length could otherwise allocate a multi-GB string. Clamp the
-            // read to the bounds of the string-literal data section.
-            long dataStart = (long)header.stringLiteralDataOffset + stringLiteral.dataIndex;
-            long sectionEnd = (long)header.stringLiteralDataOffset + header.stringLiteralDataSize;
-            long length = stringLiteral.length;
-            if (stringLiteral.dataIndex < 0 || dataStart < 0 || dataStart >= sectionEnd || length < 0)
-            {
-                return string.Empty;
-            }
-            if (dataStart + length > sectionEnd)
-            {
-                length = sectionEnd - dataStart;
-            }
-            Position = (uint)dataStart;
-            return Encoding.UTF8.GetString(ReadBytes((int)length));
+            Position = (uint)(header.stringLiteralDataOffset + stringLiteral.dataIndex);
+            return Encoding.UTF8.GetString(ReadBytes((int)stringLiteral.length));
         }
 
         private void ProcessingMetadataUsage()

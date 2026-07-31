@@ -1,4 +1,4 @@
-﻿using Mono.Cecil;
+using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Collections.Generic;
 using System;
@@ -176,7 +176,41 @@ namespace Il2CppDumper
                         var fieldType = il2Cpp.types[fieldDef.typeIndex];
                         var fieldName = metadata.GetStringFromIndex(fieldDef.nameIndex);
                         var fieldTypeRef = GetTypeReference(typeDefinition, fieldType);
-                        var fieldDefinition = new FieldDefinition(fieldName, (FieldAttributes)fieldType.attrs, fieldTypeRef);
+                        var isStatic = (fieldType.attrs & (uint)FieldAttributes.Static) != 0;
+                        var lookupIndex = index;
+                        if (il2Cpp.ReferenceDump != null &&
+                            il2Cpp.ReferenceDump.NewToOldTypeIndices.TryGetValue(index, out var oldIdx))
+                        {
+                            lookupIndex = oldIdx;
+                        }
+                        if (il2Cpp.ReferenceDump != null &&
+                            il2Cpp.ReferenceDump.StaticFields.TryGetValue(lookupIndex, out var sf) &&
+                            sf.Contains(fieldName))
+                        {
+                            isStatic = true;
+                        }
+                        else if (il2Cpp.IsSynthetic &&
+                                 (fieldName.StartsWith("s_", StringComparison.Ordinal) ||
+                                  fieldName.StartsWith("S_", StringComparison.Ordinal) ||
+                                  fieldName.StartsWith("g_", StringComparison.Ordinal) ||
+                                  fieldName.StartsWith("G_", StringComparison.Ordinal)))
+                        {
+                            isStatic = true;
+                        }
+
+                        var access = (FieldAttributes)(fieldType.attrs & (uint)FieldAttributes.FieldAccessMask);
+                        if (il2Cpp.IsSynthetic && access == 0)
+                        {
+                            access = FieldAttributes.Private;
+                        }
+
+                        var fieldAttrs = access;
+                        if (isStatic)
+                        {
+                            fieldAttrs |= FieldAttributes.Static;
+                        }
+
+                        var fieldDefinition = new FieldDefinition(fieldName, fieldAttrs, fieldTypeRef);
                         typeDefinition.Fields.Add(fieldDefinition);
                         fieldDefinitionDic.Add(i, fieldDefinition);
 
@@ -561,6 +595,8 @@ namespace Il2CppDumper
 
         private void CreateCustomAttribute(Il2CppImageDefinition imageDef, int customAttributeIndex, uint token, ModuleDefinition moduleDefinition, Collection<CustomAttribute> customAttributes)
         {
+            if (il2Cpp.IsSynthetic)
+                return;
             var attributeIndex = metadata.GetCustomAttributeIndex(imageDef, customAttributeIndex, token);
             if (attributeIndex >= 0)
             {
@@ -593,9 +629,11 @@ namespace Il2CppDumper
                     else
                     {
                         var startRange = metadata.attributeDataRanges[attributeIndex];
-                        var endRange = metadata.attributeDataRanges[attributeIndex + 1];
+                        int endOffset = attributeIndex + 1 < metadata.attributeDataRanges.Length
+                            ? (int)metadata.attributeDataRanges[attributeIndex + 1].startOffset
+                            : metadata.header.attributeDataSize;
                         metadata.Position = metadata.header.attributeDataOffset + startRange.startOffset;
-                        var buff = metadata.ReadBytes((int)(endRange.startOffset - startRange.startOffset));
+                        var buff = metadata.ReadBytes(endOffset - (int)startRange.startOffset);
                         var reader = new CustomAttributeDataReader(executor, buff);
                         if (reader.Count != 0)
                         {

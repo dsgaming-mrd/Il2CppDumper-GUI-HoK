@@ -132,7 +132,7 @@ namespace Il2CppDumper
         #region Il2Cpp dumper
         private bool Init(string il2cppPath, string metadataPath, out Metadata metadata, out Il2Cpp il2Cpp)
         {
-            Log("Il2cppDumper GUI Fixed made by Mr D - DS Gaming", Brushes.Cyan);
+            Log("Il2cppDumper GUI for HoK made by Mr D - DS Gaming", Brushes.Cyan);
             string Mach_O = "2";
 
             if (!use64bitMach_O)
@@ -273,18 +273,68 @@ namespace Il2CppDumper
                 {
                     flag = il2Cpp.SymbolSearch();
                 }
+                //if (!flag)
+                //{
+                //    Log("ERROR: Can't use auto mode to process file, trying manual mode...", Brushes.Orange);
+                //    if (string.IsNullOrEmpty(codeRegistrationTxtBox.Text) || string.IsNullOrEmpty(codeRegistrationTxtBox.Text))
+                //    {
+                //        Log("CodeRegistration or MetadataRegistration is empty", Brushes.Orange);
+                //        return false;
+                //    }
+                //    var codeRegistration = Convert.ToUInt64(codeRegistrationTxtBox.Text, 16);
+                //    var metadataRegistration = Convert.ToUInt64(metadataRegistrationTxtBox.Text, 16);
+                //    il2Cpp.Init(codeRegistration, metadataRegistration);
+                //}
+                // begin fix
                 if (!flag)
                 {
-                    Log("ERROR: Can't use auto mode to process file, trying manual mode...", Brushes.Orange);
-                    if (string.IsNullOrEmpty(codeRegistrationTxtBox.Text) || string.IsNullOrEmpty(codeRegistrationTxtBox.Text))
+                    string codeRegText = "";
+                    string metaRegText = "";
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
                     {
-                        Log("CodeRegistration or MetadataRegistration is empty", Brushes.Orange);
+                        codeRegText = codeRegistrationTxtBox.Text;
+                        metaRegText = metadataRegistrationTxtBox.Text;
+                    });
+
+                    if (!string.IsNullOrEmpty(codeRegText) && !string.IsNullOrEmpty(metaRegText))
+                    {
+                        try
+                        {
+                            var codeRegistration = Convert.ToUInt64(codeRegText.Replace("0x", "").Replace("0X", ""), 16);
+                            var metadataRegistration = Convert.ToUInt64(metaRegText.Replace("0x", "").Replace("0X", ""), 16);
+                            il2Cpp.Init(codeRegistration, metadataRegistration);
+                            flag = il2Cpp.types != null && il2Cpp.types.Length > 0;
+                        }
+                        catch (Exception ex)
+                        {
+                            Log("Manual init failed: " + ex.Message, Brushes.Orange);
+                        }
+                    }
+                }
+                if (!flag || il2Cpp.types == null || il2Cpp.types.Length == 0)
+                {
+                    try
+                    {
+                        il2Cpp.InitSyntheticFromMetadata(metadata);
+                        flag = il2Cpp.types != null && il2Cpp.types.Length > 0;
+                        if (flag)
+                        {
+                            try
+                            {
+                                var n = MethodPointerScanner.TryAttach(il2Cpp, metadata);
+                            }
+                            catch (Exception scanEx)
+                            {
+                                Log("MethodPointerScanner: " + scanEx.Message, Brushes.Orange);
+                            }
+                        }
+                    }
+                    catch (Exception synEx)
+                    {
+                        Log("Synthetic Init failed: " + synEx.Message, Brushes.Orange);
                         return false;
                     }
-                    var codeRegistration = Convert.ToUInt64(codeRegistrationTxtBox.Text, 16);
-                    var metadataRegistration = Convert.ToUInt64(metadataRegistrationTxtBox.Text, 16);
-                    il2Cpp.Init(codeRegistration, metadataRegistration);
-                }
+                } // end fix
                 if (il2Cpp.Version >= 27 && il2Cpp.IsDumped)
                 {
                     var typeDef = metadata.typeDefs[0];

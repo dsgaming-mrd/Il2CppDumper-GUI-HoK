@@ -1,4 +1,4 @@
-# Il2CppDumper GUI Fixed
+# Il2CppDumper GUI for HoK
 
 ![Il2CppDumper GUI](Screenshot.png)
 
@@ -38,4 +38,5 @@ This is a customized **Unity Il2CppDumper GUI** developed based on the original 
 
 - **[Perfare](https://github.com/Perfare)** – Original author of Il2CppDumper
 - **[AndnixSH](https://github.com/AndnixSH)** – Developer of the previous GUI version
+- **[quangbaong](https://github.com/quangbaong)** – Special thanks for the base source code from [Il2CppDumper GUI HOK](https://github.com/quangbaong/Il2CppDumper_GUI_HOK)
 - **[Mr D - DS Gaming](https://github.com/dsgaming-mrd)** – Developer of this customized GUI version (Android/iOS)

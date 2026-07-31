@@ -1,4 +1,4 @@
-﻿namespace Il2CppDumper
+namespace Il2CppDumper
 {
     public static class HeaderConstants
     {
@@ -24,7 +24,6 @@ struct Il2CppClass;
 struct Il2CppObject
 {
     Il2CppClass *klass;
-    void *monitor;
 };
 
 union Il2CppRGCTXData

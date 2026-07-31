@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -324,12 +324,11 @@ namespace Il2CppDumper
                     {
                         var p = (int)(idx * pointerSize);
                         ulong metadataValue = is32 ? BitConverter.ToUInt32(buf, p) : BitConverter.ToUInt64(buf, p);
-                        if (metadataValue >= uint.MaxValue) return;
                         var encodedToken = (uint)metadataValue;
                         var usage = Metadata.GetEncodedIndexType(encodedToken);
                         if (usage == 0 || usage > 6) return;
                         var decodedIndex = metadata.GetDecodedMethodIndex(encodedToken);
-                        if (metadataValue != ((usage << 29) | (decodedIndex << 1)) + 1) return;
+                        if (encodedToken != ((usage << 29) | ((uint)decodedIndex << 1)) + 1) return;
                         var addr = start + (ulong)p;
                         var va = il2Cpp.MapRTVA(addr);
                         if (va == 0) return;
@@ -544,12 +543,39 @@ namespace Il2CppDumper
             scriptMetadata.Name = "Field$" + fieldName;
         }
 
+        private static bool IsValidStringLiteral(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            for (var i = 0; i < value.Length; i++)
+            {
+                var c = value[i];
+                if (c == '\0') 
+                    return false;
+                if (char.IsControl(c) && c != '\r' && c != '\n' && c != '\t')
+                    return false;
+            }
+            return true;
+        }
+
         private void AddMetadataUsageStringLiteral(ScriptJson json, uint index, ulong address)
         {
-            var scriptString = new ScriptString();
+            string value;
+            try { value = metadata.GetStringLiteralFromIndex(index); }
+            catch { return; }
+
+            if (!IsValidStringLiteral(value))
+                return;
+
+            var rva = il2Cpp.GetRVA(address);
+
+            var scriptString = new ScriptString
+            {
+                Address = rva,
+                Value = value
+            };
             json.ScriptString.Add(scriptString);
-            scriptString.Address = il2Cpp.GetRVA(address);
-            scriptString.Value = metadata.GetStringLiteralFromIndex(index);
         }
 
         private void AddMetadataUsageMethodRef(ScriptJson json, uint index, ulong address)
@@ -812,7 +838,30 @@ namespace Il2CppDumper
                     structFieldInfo.FieldName = fieldName;
                     structFieldInfo.IsValueType = IsValueType(fieldType, context);
                     structFieldInfo.IsCustomType = IsCustomType(fieldType, context);
-                    if ((fieldType.attrs & FIELD_ATTRIBUTE_STATIC) != 0)
+                    var isStatic = (fieldType.attrs & FIELD_ATTRIBUTE_STATIC) != 0;
+                    var typeDefIndex = Array.IndexOf(metadata.typeDefs, typeDef);
+                    var lookupIndex = typeDefIndex;
+                    if (typeDefIndex >= 0 && il2Cpp.ReferenceDump != null &&
+                        il2Cpp.ReferenceDump.NewToOldTypeIndices.TryGetValue(typeDefIndex, out var oldIdx))
+                    {
+                        lookupIndex = oldIdx;
+                    }
+                    if (typeDefIndex >= 0 && il2Cpp.ReferenceDump != null &&
+                        il2Cpp.ReferenceDump.StaticFields.TryGetValue(lookupIndex, out var sf) &&
+                        sf.Contains(fieldName))
+                    {
+                        isStatic = true;
+                    }
+                    else if (il2Cpp.IsSynthetic &&
+                             (fieldName.StartsWith("s_", StringComparison.Ordinal) ||
+                              fieldName.StartsWith("S_", StringComparison.Ordinal) ||
+                              fieldName.StartsWith("g_", StringComparison.Ordinal) ||
+                              fieldName.StartsWith("G_", StringComparison.Ordinal)))
+                    {
+                        isStatic = true;
+                    }
+
+                    if (isStatic)
                     {
                         structInfo.StaticFields.Add(structFieldInfo);
                     }
@@ -836,11 +885,17 @@ namespace Il2CppDumper
                 Il2CppMethodDefinition methodDef;
                 if (usage == 6) //kIl2CppMetadataUsageMethodRef
                 {
+                    if (il2Cpp.methodSpecs == null || index >= il2Cpp.methodSpecs.Length)
+                        continue;
                     var methodSpec = il2Cpp.methodSpecs[index];
+                    if (methodSpec.methodDefinitionIndex < 0 || methodSpec.methodDefinitionIndex >= metadata.methodDefs.Length)
+                        continue;
                     methodDef = metadata.methodDefs[methodSpec.methodDefinitionIndex];
                 }
                 else
                 {
+                    if (index >= metadata.methodDefs.Length)
+                        continue;
                     methodDef = metadata.methodDefs[index];
                 }
                 if (methodDef.slot != ushort.MaxValue)
@@ -885,18 +940,24 @@ namespace Il2CppDumper
                     {
                         case Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_TYPE:
                             {
+                                if (il2Cpp.types == null || rgctxDefData.typeIndex >= (uint)il2Cpp.types.Length)
+                                    break;
                                 var il2CppType = il2Cpp.types[rgctxDefData.typeIndex];
                                 structRGCTXInfo.TypeName = FixName(executor.GetTypeName(il2CppType, true, false));
                                 break;
                             }
                         case Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_CLASS:
                             {
+                                if (il2Cpp.types == null || rgctxDefData.typeIndex >= (uint)il2Cpp.types.Length)
+                                    break;
                                 var il2CppType = il2Cpp.types[rgctxDefData.typeIndex];
                                 structRGCTXInfo.ClassName = FixName(executor.GetTypeName(il2CppType, true, false));
                                 break;
                             }
                         case Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_METHOD:
                             {
+                                if (il2Cpp.methodSpecs == null || rgctxDefData.methodIndex >= (uint)il2Cpp.methodSpecs.Length)
+                                    break;
                                 var methodSpec = il2Cpp.methodSpecs[rgctxDefData.methodIndex];
                                 (var methodSpecTypeName, var methodSpecMethodName) = executor.GetMethodSpecName(methodSpec, true);
                                 structRGCTXInfo.MethodName = FixName(methodSpecTypeName + "." + methodSpecMethodName);
@@ -931,18 +992,24 @@ namespace Il2CppDumper
                     {
                         case Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_TYPE:
                             {
+                                if (il2Cpp.types == null || rgctxDefData.typeIndex >= (uint)il2Cpp.types.Length)
+                                    break;
                                 var il2CppType = il2Cpp.types[rgctxDefData.typeIndex];
                                 structRGCTXInfo.TypeName = FixName(executor.GetTypeName(il2CppType, true, false));
                                 break;
                             }
                         case Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_CLASS:
                             {
+                                if (il2Cpp.types == null || rgctxDefData.typeIndex >= (uint)il2Cpp.types.Length)
+                                    break;
                                 var il2CppType = il2Cpp.types[rgctxDefData.typeIndex];
                                 structRGCTXInfo.ClassName = FixName(executor.GetTypeName(il2CppType, true, false));
                                 break;
                             }
                         case Il2CppRGCTXDataType.IL2CPP_RGCTX_DATA_METHOD:
                             {
+                                if (il2Cpp.methodSpecs == null || rgctxDefData.methodIndex >= (uint)il2Cpp.methodSpecs.Length)
+                                    break;
                                 var methodSpec = il2Cpp.methodSpecs[rgctxDefData.methodIndex];
                                 (var methodSpecTypeName, var methodSpecMethodName) = executor.GetMethodSpecName(methodSpec, true);
                                 structRGCTXInfo.MethodName = FixName(methodSpecTypeName + "." + methodSpecMethodName);
@@ -1147,7 +1214,6 @@ namespace Il2CppDumper
             if (!info.IsValueType)
             {
                 sb.Append($"\t{info.TypeName}_c *klass;\n");
-                sb.Append($"\tvoid *monitor;\n");
             }
             sb.Append($"\t{info.TypeName}_Fields fields;\n");
             sb.Append("};\n");

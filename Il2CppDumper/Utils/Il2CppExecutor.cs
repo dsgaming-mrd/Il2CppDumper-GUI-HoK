@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -99,6 +99,35 @@ namespace Il2CppDumper
                         else
                         {
                             typeDef = GetTypeDefinitionFromIl2CppType(il2CppType);
+                        }
+                        if (typeDef.declaringTypeIndex == -1 && genericClass == null)
+                        {
+                            var @namespace = metadata.GetStringFromIndex(typeDef.namespaceIndex);
+                            if (@namespace == "System")
+                            {
+                                var sysTypeName = metadata.GetStringFromIndex(typeDef.nameIndex);
+                                var mapped = sysTypeName switch
+                                {
+                                    "Void" => "void",
+                                    "Boolean" => "bool",
+                                    "Byte" => "byte",
+                                    "SByte" => "sbyte",
+                                    "Int16" => "short",
+                                    "UInt16" => "ushort",
+                                    "Int32" => "int",
+                                    "UInt32" => "uint",
+                                    "Int64" => "long",
+                                    "UInt64" => "ulong",
+                                    "Single" => "float",
+                                    "Double" => "double",
+                                    "Char" => "char",
+                                    "String" => "string",
+                                    "Object" => "object",
+                                    _ => null
+                                };
+                                if (mapped != null)
+                                    return mapped;
+                            }
                         }
                         if (typeDef.declaringTypeIndex != -1)
                         {
@@ -323,21 +352,164 @@ namespace Il2CppDumper
             return il2Cpp.GetSectionHelper(metadata.methodDefs.Count(x => x.methodIndex >= 0), metadata.typeDefs.Length, metadata.imageDefs.Length);
         }
 
-        public bool TryGetDefaultValue(int typeIndex, int dataIndex, out object value)
+        public bool TryGetDefaultValue(int typeIndex, int dataIndex, out object value, Il2CppTypeEnum typeEnumOverride = Il2CppTypeEnum.IL2CPP_TYPE_END)
         {
             var pointer = metadata.GetDefaultValueFromIndex(dataIndex);
-            var defaultValueType = il2Cpp.types[typeIndex];
-            metadata.Position = pointer;
-            if (GetConstantValueFromBlob(defaultValueType.type, metadata.Reader, out var blobValue))
+            var typeEnum = Il2CppTypeEnum.IL2CPP_TYPE_OBJECT;
+            if (typeEnumOverride != Il2CppTypeEnum.IL2CPP_TYPE_END)
             {
-                value = blobValue.Value;
+                typeEnum = typeEnumOverride;
+            }
+            else if (typeIndex >= 0 && il2Cpp.types != null && typeIndex < il2Cpp.types.Length &&
+                     il2Cpp.types[typeIndex] != null)
+            {
+                typeEnum = il2Cpp.types[typeIndex].type;
+            }
+
+            if (typeEnum is not (Il2CppTypeEnum.IL2CPP_TYPE_OBJECT or Il2CppTypeEnum.IL2CPP_TYPE_END or (Il2CppTypeEnum)0))
+            {
+                metadata.Position = pointer;
+                if (GetConstantValueFromBlob(typeEnum, metadata.Reader, out var blobValue))
+                {
+                    value = blobValue.Value;
+                    return true;
+                }
+            }
+
+            if (typeEnumOverride == Il2CppTypeEnum.IL2CPP_TYPE_END && (il2Cpp.IsSynthetic || typeEnum is Il2CppTypeEnum.IL2CPP_TYPE_OBJECT or (Il2CppTypeEnum)0))
+            {
+                if (TryProbeDefaultValueBlob(pointer, out value))
+                    return true;
+            }
+
+            value = pointer;
+            return false;
+        }
+
+        private bool TryProbeDefaultValueBlob(uint pointer, out object value)
+        {
+            value = null;
+            if (pointer == 0 || pointer >= metadata.Length)
+                return false;
+
+            try
+            {
+                metadata.Position = pointer;
+                if (TryReadV29StringConst(metadata.Reader, out var s))
+                {
+                    if (s == null || IsPlausibleConstString(s))
+                    {
+                        value = s;
+                        return true;
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                metadata.Position = pointer;
+                var b = metadata.ReadByte();
+                if (b is 0 or 1)
+                {
+                    value = b != 0;
+                    return true;
+                }
+            }
+            catch { }
+
+            try
+            {
+                metadata.Position = pointer;
+                if (GetConstantValueFromBlob(Il2CppTypeEnum.IL2CPP_TYPE_I4, metadata.Reader, out var ib) &&
+                    ib?.Value is int i4 && i4 > -50_000_000 && i4 < 50_000_000)
+                {
+                    value = i4;
+                    return true;
+                }
+            }
+            catch { }
+
+            try
+            {
+                metadata.Position = pointer;
+                if (GetConstantValueFromBlob(Il2CppTypeEnum.IL2CPP_TYPE_R4, metadata.Reader, out var fb) &&
+                    fb?.Value is float f && !float.IsNaN(f) && !float.IsInfinity(f) && Math.Abs(f) < 1e9f)
+                {
+                    value = f;
+                    return true;
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private bool TryReadV29StringConst(BinaryReader reader, out string s)
+        {
+            s = null;
+            if (il2Cpp.Version < 29)
+            {
+                var len = reader.ReadInt32();
+                if (len < 0 || len > 4096)
+                    return false;
+                s = reader.ReadString(len);
                 return true;
             }
-            else
+
+            var length = reader.ReadCompressedInt32();
+            if (length == -1)
             {
-                value = pointer;
-                return false;
+                s = null;
+                return true;
             }
+            if (length < 0 || length > 4096)
+                return false;
+            if (reader.BaseStream.Position + length > reader.BaseStream.Length)
+                return false;
+            s = Encoding.UTF8.GetString(reader.ReadBytes(length));
+            return true;
+        }
+
+        private static bool IsPlausibleConstString(string s)
+        {
+            if (s == null) return true;
+            if (s.Length > 4096) return false;
+            if (s.Length == 0) return true;
+            if (s.IndexOf('\0') >= 0) return false;
+
+            var letters = 0;
+            var pathy = 0;
+            var weird = 0;
+            foreach (var ch in s)
+            {
+                if (char.IsLetterOrDigit(ch) || ch >= 0x4E00)
+                    letters++;
+                if (ch is '/' or '\\' or '.' or '_' or '-' or ' ')
+                    pathy++;
+                if (char.IsControl(ch) && ch is not ('\t' or '\n' or '\r'))
+                    weird++;
+                if (s.Length > 8 && ch is '`' or '^' or '~' or '|' or '?')
+                    weird++;
+            }
+            if (weird > s.Length * 0.1) return false;
+            if (letters + pathy < s.Length * 0.5) return false;
+
+            if (s.Contains('/') || s.Contains('\\') ||
+                s.Contains(".prefab", StringComparison.OrdinalIgnoreCase) ||
+                s.Contains("Prefab", StringComparison.Ordinal) ||
+                s.Contains("UGUI", StringComparison.Ordinal) ||
+                s.Contains("Effect", StringComparison.Ordinal) ||
+                s.Contains("Assets", StringComparison.Ordinal))
+                return true;
+
+            if (s.Length <= 128 && letters >= s.Length * 0.6)
+                return true;
+
+            if (s.Any(c => c > 0x3000) && weird == 0)
+                return true;
+
+            return false;
         }
 
         public bool GetConstantValueFromBlob(Il2CppTypeEnum type, BinaryReader reader, out BlobValue value)
@@ -437,6 +609,10 @@ namespace Il2CppDumper
                                 elementType = ReadEncodedTypeEnum(reader, out enumType);
                             }
                             GetConstantValueFromBlob(elementType, reader, out var data);
+                            if (data == null)
+                            {
+                                data = new BlobValue { il2CppTypeEnum = elementType };
+                            }
                             data.il2CppTypeEnum = elementType;
                             data.EnumType = enumType;
                             array[i] = data;

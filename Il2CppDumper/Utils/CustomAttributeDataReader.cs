@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 
 namespace Il2CppDumper
@@ -143,6 +143,10 @@ namespace Il2CppDumper
         {
             var type = executor.ReadEncodedTypeEnum(this, out var enumType);
             executor.GetConstantValueFromBlob(type, this, out var blobValue);
+            if (blobValue == null)
+            {
+                blobValue = new BlobValue { il2CppTypeEnum = type };
+            }
             if (enumType != null)
             {
                 blobValue.EnumType = enumType;

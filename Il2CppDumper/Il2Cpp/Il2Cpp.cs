@@ -31,6 +31,12 @@ namespace Il2CppDumper
         public Dictionary<string, ulong[]> codeGenModuleMethodPointers;
         public Dictionary<string, Dictionary<uint, Il2CppRGCTXDefinition[]>> rgctxsDictionary;
         public bool IsDumped;
+        private int[][] syntheticFieldOffsets;
+        public bool IsSynthetic { get; private set; }
+        public ReferenceDumpData ReferenceDump { get; set; }
+        public ulong CodeRegistrationAddress { get; set; }
+        public ulong MetadataRegistrationAddress { get; set; }
+        public bool HasRegistrationAddresses => CodeRegistrationAddress != 0 && MetadataRegistrationAddress != 0;
 
         public abstract ulong MapVATR(ulong addr);
         public abstract ulong MapRTVA(ulong addr);
@@ -68,7 +74,7 @@ namespace Il2CppDumper
                         else if (Version == 31)
                         {
                             Version = 29;
-                            MainForm.Log($"Change il2cpp version to: {Version}");
+                            Console.WriteLine($"Change il2cpp version to: {Version}");
                         }
                     }
                     if (Version == 29)
@@ -77,7 +83,7 @@ namespace Il2CppDumper
                         {
                             Version = 29.1;
                             codeRegistration -= PointerSize * 2;
-                            MainForm.Log($"Change il2cpp version to: {Version}");
+                            Console.WriteLine($"Change il2cpp version to: {Version}");
                         }
                     }
                     if (Version == 27)
@@ -110,10 +116,10 @@ namespace Il2CppDumper
                     }
                 }
             }
-            MainForm.Log("CodeRegistration : {0:x}", codeRegistration);
-            MainForm.Log("MetadataRegistration : {0:x}", metadataRegistration);
             if (codeRegistration != 0 && metadataRegistration != 0)
             {
+                MainForm.Log("CodeRegistration : {0:x}", codeRegistration);
+                MainForm.Log("MetadataRegistration : {0:x}", metadataRegistration);
                 Init(codeRegistration, metadataRegistration);
                 return true;
             }
@@ -122,6 +128,8 @@ namespace Il2CppDumper
 
         public virtual void Init(ulong codeRegistration, ulong metadataRegistration)
         {
+            CodeRegistrationAddress = codeRegistration;
+            MetadataRegistrationAddress = metadataRegistration;
             pCodeRegistration = MapVATR<Il2CppCodeRegistration>(codeRegistration);
             var limit = this is WebAssemblyMemory ? 0x35000u : 0x50000u; //TODO
             if (Version == 27 && pCodeRegistration.invokerPointersCount > limit) //TODO
@@ -142,7 +150,7 @@ namespace Il2CppDumper
                         if (rgctxs.All(x => x.data.rgctxDataDummy > limit))
                         {
                             Version = 27.2;
-                            MainForm.Log($"Change il2cpp version to: {Version}");
+                            Console.WriteLine($"Change il2cpp version to: {Version}");
                         }
                         break;
                     }
@@ -278,9 +286,20 @@ namespace Il2CppDumper
         {
             try
             {
+                // Estimated / reference-imported layout (always dump.cs display offsets).
+                if (IsSynthetic && syntheticFieldOffsets != null &&
+                    typeIndex >= 0 && typeIndex < syntheticFieldOffsets.Length &&
+                    syntheticFieldOffsets[typeIndex] != null &&
+                    fieldIndexInType >= 0 && fieldIndexInType < syntheticFieldOffsets[typeIndex].Length)
+                {
+                    return syntheticFieldOffsets[typeIndex][fieldIndexInType];
+                }
+
                 var offset = -1;
                 if (fieldOffsetsArePointers)
                 {
+                    if (fieldOffsets == null || typeIndex < 0 || typeIndex >= fieldOffsets.Length)
+                        return -1;
                     var ptr = fieldOffsets[typeIndex];
                     if (ptr > 0)
                     {
@@ -290,6 +309,8 @@ namespace Il2CppDumper
                 }
                 else
                 {
+                    if (fieldOffsets == null || fieldIndex < 0 || fieldIndex >= fieldOffsets.Length)
+                        return -1;
                     offset = (int)fieldOffsets[fieldIndex];
                 }
                 if (offset > 0)
@@ -323,20 +344,23 @@ namespace Il2CppDumper
             return type;
         }
 
-
         public ulong GetMethodPointer(string imageName, Il2CppMethodDefinition methodDef)
         {
             if (Version >= 24.2)
             {
-                var methodToken = methodDef.token;
-                var ptrs = codeGenModuleMethodPointers[imageName];
-                var methodPointerIndex = methodToken & 0x00FFFFFFu;
+                if (codeGenModuleMethodPointers == null ||
+                    !codeGenModuleMethodPointers.TryGetValue(imageName, out var ptrs) ||
+                    ptrs == null || ptrs.Length == 0)
+                    return 0;
+                var methodPointerIndex = methodDef.token & 0x00FFFFFFu;
+                if (methodPointerIndex == 0 || methodPointerIndex > (uint)ptrs.Length)
+                    return 0;
                 return ptrs[methodPointerIndex - 1];
             }
             else
             {
                 var methodIndex = methodDef.methodIndex;
-                if (methodIndex >= 0)
+                if (methodIndex >= 0 && methodPointers != null && methodIndex < methodPointers.Length)
                 {
                     return methodPointers[methodIndex];
                 }
@@ -347,6 +371,169 @@ namespace Il2CppDumper
         public virtual ulong GetRVA(ulong pointer)
         {
             return pointer;
+        }
+
+        /// <summary>
+        /// Build a usable registration state from global-metadata when CodeRegistration /
+        /// MetadataRegistration tables are missing or zeroed (Escher / runtime-only BSS).
+        /// Enables full Il2CppDecompiler path with type names; method RVAs filled later if found.
+        /// </summary>
+        public void InitSyntheticFromMetadata(Metadata metadata)
+        {
+            IsSynthetic = true;
+
+            var maxType = 0;
+            foreach (var td in metadata.typeDefs)
+            {
+                maxType = Math.Max(maxType, td.byvalTypeIndex);
+                maxType = Math.Max(maxType, td.parentIndex);
+                maxType = Math.Max(maxType, td.declaringTypeIndex);
+                maxType = Math.Max(maxType, td.elementTypeIndex);
+            }
+            if (metadata.methodDefs != null)
+            {
+                foreach (var md in metadata.methodDefs)
+                    maxType = Math.Max(maxType, md.returnType);
+            }
+            if (metadata.fieldDefs != null)
+            {
+                foreach (var fd in metadata.fieldDefs)
+                    maxType = Math.Max(maxType, fd.typeIndex);
+            }
+            if (metadata.parameterDefs != null)
+            {
+                foreach (var pd in metadata.parameterDefs)
+                    maxType = Math.Max(maxType, pd.typeIndex);
+            }
+            if (metadata.interfaceIndices != null)
+            {
+                foreach (var idx in metadata.interfaceIndices)
+                    maxType = Math.Max(maxType, idx);
+            }
+            if (maxType < metadata.typeDefs.Length)
+                maxType = metadata.typeDefs.Length;
+
+            types = new Il2CppType[maxType + 1];
+            for (var i = 0; i <= maxType; i++)
+                types[i] = MakeSyntheticType(Il2CppTypeEnum.IL2CPP_TYPE_OBJECT, 0);
+
+            for (var ti = 0; ti < metadata.typeDefs.Length; ti++)
+            {
+                var td = metadata.typeDefs[ti];
+                if (td.byvalTypeIndex < 0 || td.byvalTypeIndex > maxType)
+                    continue;
+                var kind = td.IsValueType ? Il2CppTypeEnum.IL2CPP_TYPE_VALUETYPE : Il2CppTypeEnum.IL2CPP_TYPE_CLASS;
+                types[td.byvalTypeIndex] = MakeSyntheticType(kind, (ulong)(long)ti);
+            }
+
+            fieldOffsetsArePointers = true;
+            fieldOffsets = new ulong[metadata.typeDefs.Length];
+
+            genericMethodPointers = Array.Empty<ulong>();
+            invokerPointers = Array.Empty<ulong>();
+            reversePInvokeWrappers = Array.Empty<ulong>();
+            unresolvedVirtualCallPointers = Array.Empty<ulong>();
+            genericInstPointers = Array.Empty<ulong>();
+            genericInsts = Array.Empty<Il2CppGenericInst>();
+            methodSpecs = Array.Empty<Il2CppMethodSpec>();
+            genericMethodTable = Array.Empty<Il2CppGenericMethodFunctionsDefinitions>();
+            methodDefinitionMethodSpecs = new Dictionary<int, List<Il2CppMethodSpec>>();
+            methodSpecGenericMethodPointers = new Dictionary<Il2CppMethodSpec, ulong>();
+
+            codeGenModules = new Dictionary<string, Il2CppCodeGenModule>(StringComparer.Ordinal);
+            codeGenModuleMethodPointers = new Dictionary<string, ulong[]>(StringComparer.Ordinal);
+            rgctxsDictionary = new Dictionary<string, Dictionary<uint, Il2CppRGCTXDefinition[]>>(StringComparer.Ordinal);
+
+            foreach (var imageDef in metadata.imageDefs)
+            {
+                var imageName = metadata.GetStringFromIndex(imageDef.nameIndex);
+                var methodCount = 0;
+                var typeEnd = imageDef.typeStart + imageDef.typeCount;
+                for (var t = imageDef.typeStart; t < typeEnd && t < metadata.typeDefs.Length; t++)
+                    methodCount += metadata.typeDefs[t].method_count;
+
+                // Token indices are 1..N; array length must cover highest token.
+                if (methodCount == 0)
+                    methodCount = 1;
+
+                codeGenModules[imageName] = new Il2CppCodeGenModule
+                {
+                    methodPointerCount = methodCount
+                };
+                codeGenModuleMethodPointers[imageName] = new ulong[methodCount];
+                rgctxsDictionary[imageName] = new Dictionary<uint, Il2CppRGCTXDefinition[]>();
+            }
+
+            try
+            {
+                SyntheticTypeEnricher.Enrich(this, metadata);
+            }
+            catch { }
+
+            try
+            {
+                syntheticFieldOffsets = FieldLayoutBuilder.Build(metadata, this);
+            }
+            catch
+            {
+                syntheticFieldOffsets = null;
+            }
+        }
+
+        private Il2CppType MakeSyntheticType(Il2CppTypeEnum typeEnum, ulong data)
+        {
+            var t = new Il2CppType
+            {
+                datapoint = data,
+                bits = ((uint)typeEnum) << 16
+            };
+            t.Init(Version);
+            return t;
+        }
+
+        /// <summary>Expose type clone for enricher.</summary>
+        public Il2CppType CloneIl2CppType(Il2CppType src)
+        {
+            if (src == null)
+                return MakeSyntheticType(Il2CppTypeEnum.IL2CPP_TYPE_OBJECT, 0);
+            var t = new Il2CppType
+            {
+                datapoint = src.datapoint,
+                bits = src.bits
+            };
+            t.Init(Version);
+            return t;
+        }
+
+        /// <summary>Attach recovered method pointer table for an image (token order).</summary>
+        public void SetModuleMethodPointers(string imageName, ulong[] pointers)
+        {
+            if (string.IsNullOrEmpty(imageName) || pointers == null)
+                return;
+            codeGenModuleMethodPointers ??= new Dictionary<string, ulong[]>(StringComparer.Ordinal);
+            codeGenModuleMethodPointers[imageName] = pointers;
+            if (codeGenModules != null && codeGenModules.TryGetValue(imageName, out var mod))
+            {
+                mod.methodPointerCount = pointers.Length;
+                codeGenModules[imageName] = mod;
+            }
+        }
+
+        public (int fields, int methods) ApplyReferenceDump(Metadata metadata, ReferenceDumpData data)
+        {
+            ReferenceDump = data;
+            var fields = 0;
+            var methods = 0;
+            if (data == null || metadata == null)
+                return (0, 0);
+
+            if (syntheticFieldOffsets == null)
+                syntheticFieldOffsets = new int[metadata.typeDefs.Length][];
+
+            var typeMap = ReferenceDumpImporter.BuildTypeMap(metadata);
+            fields = ReferenceDumpImporter.ApplyFieldOffsets(data, metadata, syntheticFieldOffsets, this, typeMap);
+            methods = ReferenceDumpImporter.ApplyMethodRvas(data, metadata, this, typeMap);
+            return (fields, methods);
         }
     }
 }
