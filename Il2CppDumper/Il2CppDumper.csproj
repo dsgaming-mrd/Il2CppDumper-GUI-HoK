@@ -1,0 +1,133 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net8.0-windows</TargetFramework>
+		<OutputType>WinExe</OutputType>
+		<AssemblyName>Il2CppDumper GUI</AssemblyName>
+		<MapFileExtensions>true</MapFileExtensions>
+		<ApplicationRevision>0</ApplicationRevision>
+		<ApplicationVersion>1.0.0.%2a</ApplicationVersion>
+		<BootstrapperEnabled>true</BootstrapperEnabled>
+		<GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+		<PublishSingleFile>true</PublishSingleFile>
+		<SelfContained>true</SelfContained>
+		<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+		<IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+		<PlatformTarget>AnyCPU</PlatformTarget>
+		<Prefer32Bit>false</Prefer32Bit>
+		<PreBuildEvent>rem xcopy $(ProjectDir)Scripts $(ProjectDir)$(OutDir)bin /Y /I /S</PreBuildEvent>
+		<FileVersion>$(PackageVersion)</FileVersion>
+		<ApplicationManifest>app.manifest</ApplicationManifest>
+		<Description>GUI version by AndnixSH. This is the fork of Il2CppDumper by Perfare</Description>
+		<Copyright>Copyright © AndnixSH 2024 | Original project: Perfare 2016-2024</Copyright>
+		<Title>Il2CppDumper GUI</Title>
+		<Authors>AndnixSH, Perfare</Authors>
+		<Product>Il2CppDumper</Product>
+		<PackageId>Il2CppDumper</PackageId>
+		<UseWPF>True</UseWPF>
+		<BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+	</PropertyGroup>
+	<PropertyGroup>
+		<ApplicationIcon>il2cppdumper.ico</ApplicationIcon>
+	</PropertyGroup>
+	<PropertyGroup>
+	  <PackageProjectUrl>https://github.com/AndnixSH/Il2CppDumper-GUI</PackageProjectUrl>
+	  <RepositoryUrl>https://github.com/AndnixSH/Il2CppDumper-GUI</RepositoryUrl>
+	  <Version>3.1.0</Version>
+	  <AssemblyVersion>$(PackageVersion)</AssemblyVersion>
+	</PropertyGroup>
+	<PropertyGroup>
+		<DebugType>none</DebugType>
+		<DebugSymbols>false</DebugSymbols>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+	<ItemGroup>
+		<Content Include="config.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+		</Content>
+		<None Update="ghidra.py">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+		</None>
+		<None Update="ghidra_wasm.py">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+		</None>
+		<None Update="ghidra_with_struct.py">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+		</None>
+		<None Update="hopper-py3.py">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+		</None>
+		<None Update="ida.py">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+		</None>
+		<None Update="ida_py3.py">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+		</None>
+		<None Update="ida_with_struct.py">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+		</None>
+		<None Update="ida_with_struct_py3.py">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+		</None>
+		<None Update="il2cpp_header_to_binja.py">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+		</None>
+		<None Update="il2cpp_header_to_ghidra.py">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+			<ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+		</None>
+		<None Update="Properties\Settings.settings">
+			<Generator>SettingsSingleFileGenerator</Generator>
+			<LastGenOutput>Settings.Designer.cs</LastGenOutput>
+		</None>
+	</ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="ModernWpfUI" Version="0.9.6" />
+		<PackageReference Include="Mono.Cecil" Version="0.11.6" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<PackageReference Include="Ookii.Dialogs.Wpf" Version="5.0.1" />
+		<PackageReference Include="PortableSettingsProvider" Version="0.2.5" />
+		<PackageReference Include="System.Text.Encoding.CodePages" Version="9.0.0" />
+	</ItemGroup>
+	<ItemGroup>
+		<Compile Remove="Utils\OpenFileDialog.cs" />
+	</ItemGroup>
+	<ItemGroup>
+	  <None Remove="il2cppdumper.ico" />
+	  <None Remove="il2cppdumper.png" />
+	</ItemGroup>
+	<ItemGroup>
+	  <Page Include="App.xaml" />
+	</ItemGroup>
+	<ItemGroup>
+	  <Resource Include="il2cppdumper.ico" />
+	  <Resource Include="il2cppdumper.png" />
+	</ItemGroup>
+	<ItemGroup>
+		<Compile Update="Properties\Settings.Designer.cs">
+			<DesignTimeSharedInput>True</DesignTimeSharedInput>
+			<AutoGen>True</AutoGen>
+			<DependentUpon>Settings.settings</DependentUpon>
+		</Compile>
+	</ItemGroup>
+</Project>
