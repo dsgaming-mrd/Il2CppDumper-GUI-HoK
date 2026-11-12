@@ -1,0 +1,70 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net10.0-windows</TargetFramework>
+		<OutputType>WinExe</OutputType>
+		<AssemblyName>Il2CppDumper GUI</AssemblyName>
+		<!-- Keeps the Il2CppDumper namespace and resource names; the default would follow the project file name -->
+		<RootNamespace>Il2CppDumper</RootNamespace>
+		<MapFileExtensions>true</MapFileExtensions>
+		<ApplicationRevision>0</ApplicationRevision>
+		<ApplicationVersion>1.0.0.%2a</ApplicationVersion>
+		<BootstrapperEnabled>true</BootstrapperEnabled>
+		<GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+		<PublishSingleFile>true</PublishSingleFile>
+		<EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+		<PlatformTarget>AnyCPU</PlatformTarget>
+		<Prefer32Bit>false</Prefer32Bit>	
+		<PreBuildEvent>rem xcopy $(ProjectDir)Scripts $(ProjectDir)$(OutDir)bin /Y /I /S</PreBuildEvent>
+		<FileVersion>$(PackageVersion)</FileVersion>
+		<ApplicationManifest>app.manifest</ApplicationManifest>
+		<Description>GUI version by AndnixSH. This is the fork of Il2CppDumper by Perfare</Description>
+		<Copyright>Copyright © AndnixSH 2024 | Original project: Perfare 2016-2024</Copyright>
+		<Title>Il2CppDumper GUI</Title>
+		<Authors>AndnixSH, Perfare</Authors>
+		<Product>Il2CppDumper</Product>
+		<PackageId>Il2CppDumper</PackageId>
+		<UseWPF>True</UseWPF>
+		<BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+	</PropertyGroup>
+	<PropertyGroup>
+		<ApplicationIcon>il2cppdumper.ico</ApplicationIcon>
+	</PropertyGroup>
+	<PropertyGroup>
+	  <PackageProjectUrl>https://github.com/AndnixSH/Il2CppDumper</PackageProjectUrl>
+	  <RepositoryUrl>https://github.com/AndnixSH/Il2CppDumper</RepositoryUrl>
+	  <AssemblyVersion>$(PackageVersion)</AssemblyVersion>
+	</PropertyGroup>
+	<ItemGroup>
+		<None Update="Properties\Settings.settings">
+			<Generator>SettingsSingleFileGenerator</Generator>
+			<LastGenOutput>Settings.Designer.cs</LastGenOutput>
+		</None>
+	</ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="ModernWpfUI" Version="0.9.6" />
+		<PackageReference Include="Ookii.Dialogs.Wpf" Version="5.0.1" />
+		<PackageReference Include="PortableSettingsProvider" Version="0.2.5" />
+	</ItemGroup>
+	<ItemGroup>
+		<!-- The dumper; also brings config.json and the scripts into the output -->
+		<ProjectReference Include="..\Il2CppDumper.Core\Il2CppDumper.Core.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+	  <None Remove="il2cppdumper.ico" />
+	  <None Remove="il2cppdumper.png" />
+	</ItemGroup>
+	<ItemGroup>
+	  <Page Include="App.xaml" />
+	</ItemGroup>
+	<ItemGroup>
+	  <Resource Include="il2cppdumper.ico" />
+	  <Resource Include="il2cppdumper.png" />
+	</ItemGroup>
+	<ItemGroup>
+		<Compile Update="Properties\Settings.Designer.cs">
+			<DesignTimeSharedInput>True</DesignTimeSharedInput>
+			<AutoGen>True</AutoGen>
+			<DependentUpon>Settings.settings</DependentUpon>
+		</Compile>
+	</ItemGroup>
+</Project>
